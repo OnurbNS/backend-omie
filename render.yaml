@@ -1,0 +1,21 @@
+# Blueprint Render: https://render.com/docs/blueprint-spec
+# Ajuste o nome do servico e o plano conforme necessario.
+
+services:
+  - type: web
+    name: reembolso-omie-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: OMIE_APP_KEY
+        sync: false
+      - key: OMIE_APP_SECRET
+        sync: false
+      - key: FRONTEND_ORIGINS
+        sync: false
