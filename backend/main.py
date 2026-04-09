@@ -127,6 +127,12 @@ def create_omie_expense(payload: CreateExpenseRequest) -> CreateExpenseResponse:
         results=results,
     )
 
+    @app.post("/test")
+    async def test(data: dict):
+     return {
+        "recebido": data,
+        "status": "ok"
+    }
 
 # Executar localmente:
 # uvicorn main:app --reload
