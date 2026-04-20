@@ -32,6 +32,22 @@ def _post_omie(url: str, payload: dict[str, Any]) -> dict[str, Any]:
         response = requests.post(url, json=payload, timeout=30)
         response.raise_for_status()
         data = response.json()
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else "N/A"
+        response_body = ""
+        if exc.response is not None:
+            response_body = (exc.response.text or "").strip()
+        if response_body:
+            response_body = response_body[:1000]
+        logger.error(
+            "Erro HTTP da Omie. status_code=%s url=%s response_body=%s",
+            status_code,
+            url,
+            response_body or "<vazio>",
+        )
+        raise RuntimeError(
+            f"Erro HTTP na integracao com Omie: status={status_code} body={response_body or '<vazio>'}"
+        ) from exc
     except requests.RequestException as exc:
         logger.exception("Erro HTTP ao chamar Omie.")
         raise RuntimeError(f"Erro HTTP na integracao com Omie: {exc}") from exc
