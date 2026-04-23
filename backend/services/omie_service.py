@@ -1,5 +1,6 @@
 import logging
 import os
+import unicodedata
 from typing import Any
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 OMIE_CONTA_PAGAR_URL = "https://app.omie.com.br/api/v1/financas/contapagar/"
 OMIE_ANEXO_URL = "https://app.omie.com.br/api/v1/geral/anexo/"
+OMIE_CLIENTES_URL = "https://app.omie.com.br/api/v1/geral/clientes/"
 OMIE_CATEGORIA_REEMBOLSO = "1.01.01"
 
 
@@ -61,8 +63,78 @@ def _post_omie(url: str, payload: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    return ascii_text.strip().lower()
+
+
+def _extract_client_list(data: dict[str, Any]) -> list[dict[str, Any]]:
+    for key in (
+        "clientes_cadastro_resumido",
+        "clientes_cadastro",
+        "lista_clientes",
+        "clientes",
+    ):
+        entries = data.get(key)
+        if isinstance(entries, list):
+            return [item for item in entries if isinstance(item, dict)]
+    return []
+
+
+def buscar_fornecedor_por_nome(funcionario: str) -> int:
+    app_key, app_secret = _get_credentials()
+    target_name = _normalize_text(funcionario)
+    if not target_name:
+        raise RuntimeError("Nome do funcionario vazio para busca de fornecedor.")
+
+    page = 1
+    while True:
+        payload = {
+            "call": "ListarClientesResumido",
+            "app_key": app_key,
+            "app_secret": app_secret,
+            "param": [
+                {
+                    "pagina": page,
+                    "registros_por_pagina": 50,
+                }
+            ],
+        }
+        data = _post_omie(OMIE_CLIENTES_URL, payload)
+        clients = _extract_client_list(data)
+
+        for client in clients:
+            names = [
+                str(client.get("nome_fantasia", "")).strip(),
+                str(client.get("razao_social", "")).strip(),
+                str(client.get("cNome", "")).strip(),
+                str(client.get("nome", "")).strip(),
+            ]
+            if any(_normalize_text(name) == target_name for name in names if name):
+                code = client.get("codigo_cliente_fornecedor")
+                if code is None:
+                    break
+                try:
+                    return int(code)
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError(
+                        "Fornecedor encontrado sem codigo_cliente_fornecedor valido."
+                    ) from exc
+
+        total_pages = int(data.get("total_de_paginas", page) or page)
+        if page >= total_pages or not clients:
+            break
+        page += 1
+
+    raise RuntimeError(
+        f"Fornecedor/cliente nao encontrado na Omie para o funcionario '{funcionario}'."
+    )
+
+
 def create_expense(funcionario: str, despesa: dict[str, Any]) -> dict[str, Any]:
     app_key, app_secret = _get_credentials()
+    codigo_fornecedor = buscar_fornecedor_por_nome(funcionario)
 
     payload = {
         "call": "IncluirContaPagar",
@@ -74,6 +146,7 @@ def create_expense(funcionario: str, despesa: dict[str, Any]) -> dict[str, Any]:
                 "data_vencimento": despesa["data"],
                 "valor_documento": float(despesa["valor"]),
                 "codigo_categoria": OMIE_CATEGORIA_REEMBOLSO,
+                "codigo_cliente_fornecedor": codigo_fornecedor,
                 "observacao": f"Reembolso - {funcionario}",
             }
         ],
