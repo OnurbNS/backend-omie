@@ -85,6 +85,9 @@ def _extract_client_list(data: dict[str, Any]) -> list[dict[str, Any]]:
 def buscar_fornecedor_por_nome(funcionario: str) -> int:
     app_key, app_secret = _get_credentials()
     target_name = _normalize_text(funcionario)
+
+    logger.info(f"🔍 Buscando fornecedor para: '{funcionario}' (normalizado: '{target_name}')")
+
     if not target_name:
         raise RuntimeError("Nome do funcionario vazio para busca de fornecedor.")
 
@@ -101,8 +104,20 @@ def buscar_fornecedor_por_nome(funcionario: str) -> int:
                 }
             ],
         }
+
         data = _post_omie(OMIE_CLIENTES_URL, payload)
         clients = _extract_client_list(data)
+
+        # 🔥 LOG DA LISTA RETORNADA
+        logger.info("----- CLIENTES RETORNADOS PELA OMIE -----")
+        for client in clients:
+            logger.info({
+                "codigo": client.get("codigo_cliente_fornecedor"),
+                "nome_fantasia": client.get("nome_fantasia"),
+                "razao_social": client.get("razao_social"),
+                "nome": client.get("nome"),
+            })
+        logger.info("----- FIM LISTA -----")
 
         for client in clients:
             names = [
@@ -111,10 +126,21 @@ def buscar_fornecedor_por_nome(funcionario: str) -> int:
                 str(client.get("cNome", "")).strip(),
                 str(client.get("nome", "")).strip(),
             ]
+
+            # 🔥 LOG DE COMPARAÇÃO
+            for name in names:
+                if name:
+                    logger.info(
+                        f"Comparando -> INPUT: '{target_name}' | API: '{_normalize_text(name)}'"
+                    )
+
             if any(_normalize_text(name) == target_name for name in names if name):
                 code = client.get("codigo_cliente_fornecedor")
+                logger.info(f"✅ MATCH ENCONTRADO: {names} -> código {code}")
+
                 if code is None:
                     break
+
                 try:
                     return int(code)
                 except (TypeError, ValueError) as exc:
@@ -125,6 +151,7 @@ def buscar_fornecedor_por_nome(funcionario: str) -> int:
         total_pages = int(data.get("total_de_paginas", page) or page)
         if page >= total_pages or not clients:
             break
+
         page += 1
 
     raise RuntimeError(
@@ -134,6 +161,7 @@ def buscar_fornecedor_por_nome(funcionario: str) -> int:
 
 def create_expense(funcionario: str, despesa: dict[str, Any]) -> dict[str, Any]:
     app_key, app_secret = _get_credentials()
+
     codigo_fornecedor = buscar_fornecedor_por_nome(funcionario)
 
     payload = {
